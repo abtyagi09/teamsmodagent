@@ -6,20 +6,21 @@ Provides functionality to:
 - Retrieve message content and metadata
 - Delete violating messages
 - Subscribe to webhooks for real-time notifications
+
+Uses REST API approach to avoid msgraph-sdk Windows long path issues.
 """
 
 import asyncio
 from datetime import datetime, timedelta
 from typing import Any
 
-from azure.identity.aio import ClientSecretCredential
-from msgraph import GraphServiceClient
-from msgraph.generated.teams.item.channels.item.messages.messages_request_builder import MessagesRequestBuilder
+import requests
+from msal import ConfidentialClientApplication
 
 
 class TeamsClient:
     """
-    Client for interacting with Microsoft Teams via Microsoft Graph API.
+    Client for interacting with Microsoft Teams via Microsoft Graph REST API.
     """
 
     def __init__(
@@ -40,20 +41,47 @@ class TeamsClient:
         """
         self.tenant_id = tenant_id
         self.client_id = client_id
+        self.client_secret = client_secret
         self.team_id = team_id
+        self.graph_url = "https://graph.microsoft.com/v1.0"
+        self._access_token = None
+        self._token_expiry = None
 
-        # Initialize credentials
-        self.credential = ClientSecretCredential(
-            tenant_id=tenant_id,
+        # Initialize MSAL client
+        authority = f"https://login.microsoftonline.com/{tenant_id}"
+        self.msal_app = ConfidentialClientApplication(
             client_id=client_id,
-            client_secret=client_secret,
+            client_credential=client_secret,
+            authority=authority,
         )
 
-        # Initialize Graph client
-        self.graph_client = GraphServiceClient(
-            credentials=self.credential,
-            scopes=["https://graph.microsoft.com/.default"],
-        )
+    def _get_access_token(self) -> str:
+        """Get or refresh access token."""
+        # Check if token is still valid
+        if self._access_token and self._token_expiry:
+            if datetime.utcnow() < self._token_expiry:
+                return self._access_token
+
+        # Acquire new token
+        scopes = ["https://graph.microsoft.com/.default"]
+        result = self.msal_app.acquire_token_for_client(scopes=scopes)
+
+        if "access_token" in result:
+            self._access_token = result["access_token"]
+            # Set expiry to 55 minutes (tokens are valid for 60 minutes)
+            self._token_expiry = datetime.utcnow() + timedelta(minutes=55)
+            return self._access_token
+        else:
+            raise Exception(f"Failed to acquire token: {result.get('error_description')}")
+
+    def _get_headers(self) -> dict:
+        """Get HTTP headers with authentication."""
+        token = self._get_access_token()
+        return {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        }
+
 
     async def get_channels(self, monitored_channels: list[str] | None = None) -> list[dict[str, Any]]:
         """
@@ -66,21 +94,22 @@ class TeamsClient:
             List of channel information
         """
         try:
-            channels_response = await self.graph_client.teams.by_team_id(self.team_id).channels.get()
+            url = f"{self.graph_url}/teams/{self.team_id}/channels"
+            response = requests.get(url, headers=self._get_headers())
+            response.raise_for_status()
 
-            if not channels_response or not channels_response.value:
-                return []
-
+            data = response.json()
             channels = []
-            for channel in channels_response.value:
+
+            for channel in data.get("value", []):
                 channel_info = {
-                    "id": channel.id,
-                    "name": channel.display_name,
-                    "description": channel.description,
+                    "id": channel.get("id"),
+                    "name": channel.get("displayName"),
+                    "description": channel.get("description"),
                 }
 
                 # Filter if monitored_channels is specified
-                if monitored_channels is None or channel.display_name in monitored_channels:
+                if monitored_channels is None or channel.get("displayName") in monitored_channels:
                     channels.append(channel_info)
 
             return channels
@@ -88,6 +117,8 @@ class TeamsClient:
         except Exception as e:
             print(f"Error fetching channels: {e}")
             return []
+
+
 
     async def get_recent_messages(
         self,
@@ -107,58 +138,56 @@ class TeamsClient:
             List of message information
         """
         try:
-            # Build request with top parameter for pagination
-            request_config = MessagesRequestBuilder.MessagesRequestBuilderGetRequestConfiguration(
-                query_parameters=MessagesRequestBuilder.MessagesRequestBuilderGetQueryParameters(
-                    top=limit,
-                )
-            )
+            url = f"{self.graph_url}/teams/{self.team_id}/channels/{channel_id}/messages"
+            params = {"$top": limit}
+            
+            response = requests.get(url, headers=self._get_headers(), params=params)
+            response.raise_for_status()
 
-            messages_response = await (
-                self.graph_client.teams.by_team_id(self.team_id)
-                .channels.by_channel_id(channel_id)
-                .messages.get(request_configuration=request_config)
-            )
-
-            if not messages_response or not messages_response.value:
-                return []
-
+            data = response.json()
             messages = []
-            for msg in messages_response.value:
+
+            for msg in data.get("value", []):
                 # Parse message timestamp
-                created_at = msg.created_date_time
+                created_at_str = msg.get("createdDateTime")
+                created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00")) if created_at_str else None
 
                 # Filter by timestamp if specified
                 if since and created_at and created_at < since:
                     continue
 
+                # Extract user information
+                from_info = msg.get("from", {})
+                user_info = from_info.get("user", {}) if from_info else {}
+
+                # Extract body content
+                body = msg.get("body", {})
+                content = body.get("content", "")
+                content_type = body.get("contentType", "text")
+
+                # Extract attachments
+                attachments_data = msg.get("attachments", [])
+                attachments = [
+                    {
+                        "id": att.get("id"),
+                        "name": att.get("name"),
+                        "content_type": att.get("contentType"),
+                    }
+                    for att in attachments_data
+                ]
+
                 message_info = {
-                    "id": msg.id,
-                    "content": msg.body.content if msg.body else "",
-                    "content_type": msg.body.content_type.value if msg.body and msg.body.content_type else "text",
+                    "id": msg.get("id"),
+                    "content": content,
+                    "content_type": content_type,
                     "from_user": {
-                        "id": msg.from_property.user.id if msg.from_property and msg.from_property.user else None,
-                        "display_name": (
-                            msg.from_property.user.display_name
-                            if msg.from_property and msg.from_property.user
-                            else "Unknown"
-                        ),
+                        "id": user_info.get("id"),
+                        "display_name": user_info.get("displayName", "Unknown"),
                     },
                     "created_at": created_at.isoformat() if created_at else None,
                     "channel_id": channel_id,
-                    "has_attachments": bool(msg.attachments and len(msg.attachments) > 0),
-                    "attachments": (
-                        [
-                            {
-                                "id": att.id,
-                                "name": att.name,
-                                "content_type": att.content_type,
-                            }
-                            for att in msg.attachments
-                        ]
-                        if msg.attachments
-                        else []
-                    ),
+                    "has_attachments": bool(attachments),
+                    "attachments": attachments,
                 }
 
                 messages.append(message_info)
@@ -169,9 +198,14 @@ class TeamsClient:
             print(f"Error fetching messages from channel {channel_id}: {e}")
             return []
 
+
+
     async def delete_message(self, channel_id: str, message_id: str) -> bool:
         """
         Delete a message from a channel.
+
+        Note: Soft delete requires specific permissions and may not be available
+        for all app registrations. This uses the softDelete endpoint.
 
         Args:
             channel_id: Channel ID containing the message
@@ -181,18 +215,16 @@ class TeamsClient:
             True if successful, False otherwise
         """
         try:
-            await (
-                self.graph_client.teams.by_team_id(self.team_id)
-                .channels.by_channel_id(channel_id)
-                .messages.by_chat_message_id(message_id)
-                .soft_delete()
-            )
-
+            url = f"{self.graph_url}/teams/{self.team_id}/channels/{channel_id}/messages/{message_id}/softDelete"
+            response = requests.post(url, headers=self._get_headers())
+            response.raise_for_status()
             return True
 
         except Exception as e:
             print(f"Error deleting message {message_id}: {e}")
             return False
+
+
 
     async def monitor_channels(
         self,
@@ -250,8 +282,9 @@ class TeamsClient:
 
     async def close(self):
         """Clean up resources."""
-        if self.credential:
-            await self.credential.close()
+        # No async resources to clean up with REST API approach
+        pass
+
 
 
 class ContentSafetyIntegration:

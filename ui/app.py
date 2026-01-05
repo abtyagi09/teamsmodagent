@@ -403,7 +403,7 @@ def show_moderation_policies():
                 "Description",
                 value=policy_config.get("description", ""),
                 key=f"description_{policy_name}",
-                height=60,
+                height=68,
             )
 
             if st.button(f"💾 Save {policy_name.replace('_', ' ').title()}", key=f"save_{policy_name}"):

@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     # Notifications
     notification_email: str | None = Field(None, description="Email for notifications")
     notification_webhook: str | None = Field(None, description="Webhook URL for notifications")
+    email_connection_string: str | None = Field(None, description="Azure Communication Services connection string")
+    email_sender: str | None = Field(None, description="Sender email address")
 
     # Application settings
     log_level: str = Field("INFO", description="Logging level")

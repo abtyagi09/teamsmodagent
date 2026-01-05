@@ -7,12 +7,12 @@ Initializes all components and starts the monitoring workflow.
 import argparse
 import asyncio
 
-from agents.moderation_agent import ModerationAgent
-from agents.notification_agent import NotificationAgent
-from integrations.teams_client import TeamsClient
-from orchestrator.workflow import ModerationWorkflow
-from utils.config_loader import get_settings, load_json_config
-from utils.logging_config import get_logger, setup_logging
+from .agents.moderation_agent import ModerationAgent
+from .agents.notification_agent import NotificationAgent
+from .integrations.teams_client import TeamsClient
+from .orchestrator.workflow import ModerationWorkflow
+from .utils.config_loader import get_settings, load_json_config
+from .utils.logging_config import get_logger, setup_logging
 
 
 async def main():
@@ -72,6 +72,8 @@ async def main():
             model_deployment=settings.foundry_model_deployment,
             notification_email=settings.notification_email,
             notification_webhook=settings.notification_webhook,
+            email_connection_string=settings.email_connection_string,
+            email_sender=settings.email_sender,
         )
 
         logger.info("Initializing Teams client")

@@ -15,6 +15,7 @@ import aiohttp
 from agent_framework import ChatAgent, ChatMessage, Role
 from agent_framework_azure_ai import AzureAIAgentClient
 from azure.identity import DefaultAzureCredential
+from azure.communication.email import EmailClient
 
 
 class NotificationAgent:
@@ -28,6 +29,8 @@ class NotificationAgent:
         model_deployment: str,
         notification_email: str | None = None,
         notification_webhook: str | None = None,
+        email_connection_string: str | None = None,
+        email_sender: str | None = None,
     ):
         """
         Initialize the notification agent.
@@ -37,9 +40,21 @@ class NotificationAgent:
             model_deployment: Model deployment name
             notification_email: Email address for notifications
             notification_webhook: Webhook URL for notifications
+            email_connection_string: Azure Communication Services connection string
+            email_sender: Sender email address (from ACS Email domain)
         """
         self.notification_email = notification_email
         self.notification_webhook = notification_webhook
+        self.email_connection_string = email_connection_string
+        self.email_sender = email_sender or "DoNotReply@teams-moderation.com"
+        
+        # Initialize email client if connection string provided
+        self.email_client = None
+        if email_connection_string:
+            try:
+                self.email_client = EmailClient.from_connection_string(email_connection_string)
+            except Exception as e:
+                print(f"Warning: Failed to initialize email client: {e}")
 
         # Initialize AI agent for composing notifications
         self.agent_client = AzureAIAgentClient(
@@ -324,12 +339,7 @@ Compose a professional notification in JSON format."""
         context: dict[str, Any],
     ) -> dict[str, Any]:
         """
-        Send email notification (placeholder - requires email service integration).
-
-        In production, integrate with:
-        - Azure Communication Services
-        - SendGrid
-        - Microsoft Graph API (send mail)
+        Send email notification using Azure Communication Services.
 
         Args:
             notification_content: Composed notification
@@ -339,15 +349,146 @@ Compose a professional notification in JSON format."""
         Returns:
             Status of email notification
         """
-        # TODO: Implement actual email sending
-        # For now, just log that email would be sent
-        return {
-            "channel": "email",
-            "success": True,
-            "recipient": self.notification_email,
-            "subject": notification_content.get("subject", "Policy Violation"),
-            "note": "Email integration pending - currently logged only",
-        }
+        if not self.email_client:
+            return {
+                "channel": "email",
+                "success": False,
+                "error": "Email client not configured. Set EMAIL_CONNECTION_STRING in environment.",
+            }
+
+        try:
+            subject = notification_content.get("subject", "Policy Violation Detected")
+            body = self._format_email_body(notification_content, violation_details, context)
+            urgency = notification_content.get("urgency", "medium")
+            
+            # Build email message
+            message = {
+                "senderAddress": self.email_sender,
+                "recipients": {
+                    "to": [{"address": self.notification_email}],
+                },
+                "content": {
+                    "subject": subject,
+                    "html": body,
+                },
+                "importance": "high" if urgency == "high" else "normal",
+            }
+
+            # Send email
+            poller = self.email_client.begin_send(message)
+            result = poller.result()
+
+            return {
+                "channel": "email",
+                "success": True,
+                "recipient": self.notification_email,
+                "subject": subject,
+                "message_id": result.message_id if hasattr(result, "message_id") else None,
+                "status": result.status if hasattr(result, "status") else "sent",
+            }
+
+        except Exception as e:
+            return {
+                "channel": "email",
+                "success": False,
+                "error": str(e),
+                "recipient": self.notification_email,
+            }
+
+    def _format_email_body(
+        self,
+        notification_content: dict[str, Any],
+        violation_details: dict[str, Any],
+        context: dict[str, Any],
+    ) -> str:
+        """
+        Format email body as HTML.
+
+        Args:
+            notification_content: Composed notification
+            violation_details: Violation details
+            context: Context information
+
+        Returns:
+            HTML formatted email body
+        """
+        urgency = notification_content.get("urgency", "medium")
+        urgency_color = {"high": "#dc3545", "medium": "#ffc107", "low": "#28a745"}.get(urgency, "#6c757d")
+        urgency_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(urgency, "ℹ️")
+        
+        violations = ", ".join(violation_details.get("violations", []))
+        author = context.get("author", "Unknown")
+        channel = context.get("channel", "Unknown")
+        timestamp = context.get("timestamp", datetime.utcnow().isoformat())
+        action = violation_details.get("action", "flagged")
+        body_text = notification_content.get("body", "")
+        recommended_actions = notification_content.get("recommended_actions", [])
+        
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; }}
+        .container {{ max-width: 600px; margin: 0 auto; padding: 20px; }}
+        .header {{ background-color: {urgency_color}; color: white; padding: 20px; border-radius: 5px 5px 0 0; }}
+        .content {{ background-color: #f8f9fa; padding: 20px; border: 1px solid #dee2e6; border-top: none; }}
+        .info-table {{ width: 100%; border-collapse: collapse; margin: 15px 0; }}
+        .info-table td {{ padding: 8px; border-bottom: 1px solid #dee2e6; }}
+        .info-table td:first-child {{ font-weight: bold; width: 150px; }}
+        .actions {{ background-color: #fff3cd; padding: 15px; border-left: 4px solid #ffc107; margin: 15px 0; }}
+        .footer {{ text-align: center; margin-top: 20px; color: #6c757d; font-size: 12px; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h2>{urgency_emoji} Teams Moderation Alert</h2>
+            <p style="margin: 0;">{notification_content.get('subject', 'Policy Violation Detected')}</p>
+        </div>
+        <div class="content">
+            <p>{body_text}</p>
+            
+            <table class="info-table">
+                <tr>
+                    <td>Severity:</td>
+                    <td><strong style="color: {urgency_color};">{urgency.upper()}</strong></td>
+                </tr>
+                <tr>
+                    <td>Policies Violated:</td>
+                    <td>{violations}</td>
+                </tr>
+                <tr>
+                    <td>Author:</td>
+                    <td>{author}</td>
+                </tr>
+                <tr>
+                    <td>Channel:</td>
+                    <td>{channel}</td>
+                </tr>
+                <tr>
+                    <td>Timestamp:</td>
+                    <td>{timestamp}</td>
+                </tr>
+                <tr>
+                    <td>Action Taken:</td>
+                    <td><strong>{action}</strong></td>
+                </tr>
+            </table>
+            
+            {f'''<div class="actions">
+                <h4 style="margin-top: 0;">📋 Recommended Actions:</h4>
+                <ul>{''.join(f'<li>{action}</li>' for action in recommended_actions)}</ul>
+            </div>''' if recommended_actions else ''}
+            
+            <p style="margin-top: 20px;"><em>This is an automated notification from the Teams Moderation System.</em></p>
+        </div>
+        <div class="footer">
+            <p>Teams Moderation System | Powered by Azure AI</p>
+        </div>
+    </div>
+</body>
+</html>"""
+        return html
 
     async def close(self):
         """Clean up resources."""

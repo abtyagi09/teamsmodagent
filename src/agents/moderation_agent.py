@@ -236,11 +236,32 @@ Provide your analysis in JSON format."""
         action = "allow"
         notify = False
         violated_policies = agent_result.get("violations", [])
+        
+        # Also check Content Safety categories directly if flagged
+        if content_safety_result.get("flagged", False):
+            categories = content_safety_result.get("categories", {})
+            print(f"🚨 Content Safety flagged! Categories: {categories}")
+            for category, score in categories.items():
+                if score >= 2:  # Low severity or higher
+                    print(f"   ➕ Adding category '{category}' (score: {score}) to violated policies")
+                    # Add category to violated policies if not already there
+                    if category not in violated_policies:
+                        violated_policies.append(category)
 
+        print(f"🔍 Violated policies: {violated_policies}")
+        print(f"📋 Available policies: {list(text_policies.keys())}")
+        
         if is_violation:
             # Check each violated policy
             for policy_name in violated_policies:
-                policy = text_policies.get(policy_name, {})
+                # Normalize policy name (replace spaces with underscores for lookup)
+                policy_key = policy_name.lower().replace(" ", "_")
+                policy = text_policies.get(policy_key, {})
+                
+                print(f"🔎 Checking '{policy_name}' -> '{policy_key}' -> Found: {policy_key in text_policies}")
+                if policy_key in text_policies:
+                    print(f"   ✓ Policy config: enabled={policy.get('enabled')}, notify={policy.get('notify')}, action={policy.get('action')}")
+                
                 if policy.get("enabled", False):
                     policy_action = policy.get("action", "flag")
                     policy_notify = policy.get("notify", False)
@@ -252,6 +273,7 @@ Provide your analysis in JSON format."""
                         action = "flag"
 
                     notify = notify or policy_notify
+                    print(f"   → notify={notify}, action={action}")
 
         return {
             "is_violation": is_violation,

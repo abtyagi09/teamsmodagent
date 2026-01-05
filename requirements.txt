@@ -4,12 +4,15 @@ azure-ai-contentsafety==1.0.0
 azure-identity==1.18.0
 msal==1.31.0
 
-# Microsoft Graph API
-msgraph-sdk==1.0.0
+# HTTP Requests (for Microsoft Graph API REST calls)
+requests==2.32.5
+
+# Email notifications
+azure-communication-email==1.0.0
 
 # Configuration & Environment
 python-dotenv==1.0.1
-pydantic==2.10.6
+pydantic>=2.11.0
 pydantic-settings==2.7.0
 
 # Utilities
