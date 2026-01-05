@@ -1,0 +1,74 @@
+{
+  "text_policies": {
+    "hate_speech": {
+      "enabled": true,
+      "threshold": "medium",
+      "action": "delete",
+      "notify": true,
+      "description": "Detects hate speech, discrimination, or harassment"
+    },
+    "profanity": {
+      "enabled": true,
+      "threshold": "high",
+      "action": "flag",
+      "notify": false,
+      "description": "Detects profane language"
+    },
+    "violence": {
+      "enabled": true,
+      "threshold": "medium",
+      "action": "delete",
+      "notify": true,
+      "description": "Detects violent or threatening content"
+    },
+    "self_harm": {
+      "enabled": true,
+      "threshold": "low",
+      "action": "delete",
+      "notify": true,
+      "description": "Detects self-harm related content"
+    },
+    "sexual_content": {
+      "enabled": true,
+      "threshold": "medium",
+      "action": "delete",
+      "notify": true,
+      "description": "Detects sexually explicit content"
+    },
+    "pii_leak": {
+      "enabled": true,
+      "threshold": "low",
+      "action": "flag",
+      "notify": true,
+      "description": "Detects personally identifiable information"
+    }
+  },
+  "image_policies": {
+    "inappropriate_images": {
+      "enabled": false,
+      "threshold": "medium",
+      "action": "delete",
+      "notify": true,
+      "description": "Analyzes images for inappropriate content (future feature)"
+    }
+  },
+  "actions": {
+    "delete": {
+      "description": "Immediately delete the message",
+      "requires_approval": false
+    },
+    "flag": {
+      "description": "Flag for review but do not delete",
+      "requires_approval": true
+    },
+    "archive": {
+      "description": "Move to archive channel for review",
+      "requires_approval": false
+    }
+  },
+  "thresholds": {
+    "low": "0-30% confidence",
+    "medium": "31-70% confidence",
+    "high": "71-100% confidence"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "monitored_channels": [
+    "general",
+    "frontline-workforce",
+    "operations",
+    "customer-service"
+  ],
+  "excluded_channels": [
+    "hr-private",
+    "executives",
+    "admin-only"
+  ],
+  "monitoring_settings": {
+    "enable_real_time": true,
+    "enable_batch_scan": false,
+    "batch_interval_minutes": 60
+  }
+}
