@@ -171,7 +171,77 @@ The agent will begin monitoring configured Teams channels within 60 seconds of s
 
 ---
 
-## Step 6: Clean Up (Optional)
+## Step 6: Post-Deployment Configuration
+
+### 6.1 Complete Azure Communication Services Setup
+
+**📋 Detailed Guide:** See [Email Setup Guide](EMAIL_SETUP.md) for comprehensive instructions.
+
+**Quick Setup:**
+1. **Configure Email Domain:**
+   ```bash
+   # Add Azure-managed domain (quickest option)
+   az communication email domain create \
+     --domain-name "$(uuidgen).azurecomm.net" \
+     --email-service-name "ecs-xcpeyeriwqbc4" \
+     --resource-group rg-azdteamsmod2
+   ```
+
+2. **Update Email Configuration:**
+   ```bash
+   # Get ACS connection string
+   azd env set EMAIL_CONNECTION_STRING "$(az communication list-key --name acs-xcpeyeriwqbc4 --resource-group rg-azdteamsmod2 --query primaryConnectionString -o tsv)"
+   
+   # Set sender email (use your configured domain)
+   azd env set EMAIL_SENDER "noreply@your-domain.azurecomm.net"
+   
+   # Set notification recipients
+   azd env set NOTIFICATION_EMAIL "admin@yourcompany.com"
+   
+   # Redeploy with email configuration
+   azd up
+   ```
+
+3. **Test Email Functionality:**
+   - Access UI dashboard → Email Configuration
+   - Click "Send Test Email"
+   - Verify delivery to configured recipients
+
+### 6.2 Verify Complete System
+
+**System Health Check:**
+```bash
+# Verify all resources are healthy
+az resource list --resource-group rg-azdteamsmod2 --query "[?properties.provisioningState!='Succeeded'].{name:name, status:properties.provisioningState}" --output table
+
+# Check application logs
+azd logs --service agent --tail 50 | grep -E "(Starting|Connected|Monitoring|Error)"
+
+# Test UI accessibility
+curl -I $(azd show --query services.ui.uri -o tsv)
+```
+
+**Configuration Verification:**
+- Verify Teams connection in UI dashboard
+- Test email notification delivery
+- Confirm channel monitoring is active
+- Check policy configuration is saved
+
+### 6.3 Production Readiness Checklist
+
+- [ ] **Teams Integration:** App registration configured and working
+- [ ] **Email Notifications:** ACS setup complete and tested
+- [ ] **Security:** All secrets stored securely, access controls in place
+- [ ] **Monitoring:** Application Insights and alerts configured
+- [ ] **Scaling:** Container app scaling rules appropriate for usage
+- [ ] **Backup:** Configuration backed up and documented
+- [ ] **Documentation:** Team trained on system operation
+
+**🎯 Next Steps:** Follow [Next Steps Guide](../next-steps.md) for ongoing operations and monitoring.
+
+---
+
+## Step 7: Clean Up (Optional)
 
 To remove all deployed resources:
 

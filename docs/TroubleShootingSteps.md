@@ -337,6 +337,205 @@ Channel not found or access denied
 
 ---
 
+## Azure Communication Services Issues
+
+### Email Configuration Problems
+
+#### Connection String Authentication Failed
+
+**Error Messages:**
+```
+Authentication failed for Azure Communication Services
+Failed to authenticate with Azure Communication Services
+Invalid connection string format
+```
+
+**Resolution:**
+1. **Verify Connection String Format:**
+   ```bash
+   # Get correct connection string
+   az communication list-key \
+     --name "acs-xcpeyeriwqbc4" \
+     --resource-group rg-azdteamsmod2 \
+     --query "primaryConnectionString" -o tsv
+   
+   # Should look like: endpoint=https://acs-name.communication.azure.com/;accesskey=ACCESS_KEY
+   ```
+
+2. **Update Environment Variable:**
+   ```bash
+   azd env set EMAIL_CONNECTION_STRING "your-correct-connection-string"
+   azd up  # Redeploy to apply changes
+   ```
+
+3. **Verify ACS Resource Status:**
+   ```bash
+   az communication show --name "acs-xcpeyeriwqbc4" --resource-group rg-azdteamsmod2
+   ```
+
+#### Domain Not Verified or Missing
+
+**Error Messages:**
+```
+Domain not found or not verified
+Sender domain verification failed
+Invalid sender email domain
+```
+
+**Resolution:**
+1. **Check Domain Status:**
+   ```bash
+   # List configured domains
+   az communication email domain list \
+     --email-service-name "ecs-xcpeyeriwqbc4" \
+     --resource-group rg-azdteamsmod2
+   
+   # Check domain verification status
+   az communication email domain show \
+     --domain-name "your-domain" \
+     --email-service-name "ecs-xcpeyeriwqbc4" \
+     --resource-group rg-azdteamsmod2
+   ```
+
+2. **Add Azure-Managed Domain (Quick Fix):**
+   ```bash
+   # Create Azure-managed domain for testing
+   az communication email domain create \
+     --domain-management AzureManaged \
+     --location Global \
+     --email-service-name "ecs-xcpeyeriwqbc4" \
+     --resource-group rg-azdteamsmod2
+   ```
+
+3. **Update Sender Email:**
+   ```bash
+   # Use the Azure-managed domain
+   azd env set EMAIL_SENDER "noreply@{generated-domain}.azurecomm.net"
+   azd up
+   ```
+
+#### Email Delivery Failures
+
+**Error Messages:**
+```
+Email delivery failed
+Recipient address rejected
+Rate limit exceeded
+```
+
+**Resolution:**
+1. **Check Email Limits:**
+   ```bash
+   # Monitor email usage
+   az monitor metrics list \
+     --resource "/subscriptions/{sub-id}/resourceGroups/rg-azdteamsmod2/providers/Microsoft.Communication/CommunicationServices/acs-xcpeyeriwqbc4" \
+     --metric "EmailDeliveryAttempts,EmailDeliveryFailures"
+   ```
+
+2. **Verify Recipient Addresses:**
+   - Ensure recipient emails are valid
+   - Check if emails are going to spam folder
+   - Verify recipient domain accepts external emails
+
+3. **Check Rate Limits:**
+   - Free tier: 100 emails/month
+   - Standard tier: Rate limits per domain
+   - Implement email batching if hitting limits
+
+4. **Test Email Sending:**
+   ```python
+   # Test script to validate email functionality
+   from azure.communication.email import EmailClient
+   import os
+   
+   connection_string = os.environ.get('EMAIL_CONNECTION_STRING')
+   sender_email = os.environ.get('EMAIL_SENDER')
+   
+   client = EmailClient.from_connection_string(connection_string)
+   
+   message = {
+       "senderAddress": sender_email,
+       "recipients": {"to": [{"address": "test@example.com"}]},
+       "content": {
+           "subject": "Test Email",
+           "plainText": "Test message from Teams moderation system"
+       }
+   }
+   
+   try:
+       poller = client.begin_send(message)
+       result = poller.result()
+       print(f"Email sent successfully: {result.message_id}")
+   except Exception as e:
+       print(f"Email send failed: {str(e)}")
+   ```
+
+### Email Template and Formatting Issues
+
+#### HTML Content Not Rendering
+
+**Problem:** Email appears as plain text instead of formatted HTML.
+
+**Resolution:**
+1. **Verify HTML Content Type:**
+   - Ensure email template includes both HTML and plain text versions
+   - Check Content-Type headers in email configuration
+
+2. **Test HTML Templates:**
+   ```bash
+   # Access UI dashboard → Email Templates
+   # Test different template formats
+   # Verify HTML syntax is correct
+   ```
+
+#### Missing Template Variables
+
+**Problem:** Email contains `{{variable_name}}` instead of actual values.
+
+**Resolution:**
+1. **Check Variable Mapping:**
+   - Verify all template variables are defined in code
+   - Check variable names match exactly (case-sensitive)
+
+2. **Available Variables:**
+   ```
+   {{violation_type}} - Type of content violation
+   {{severity}} - Violation severity level  
+   {{author}} - Message author information
+   {{channel}} - Teams channel name
+   {{message_content}} - Original message text
+   {{timestamp}} - When violation occurred
+   {{action_taken}} - Action performed by system
+   ```
+
+### Performance and Scaling Issues
+
+#### Email Sending Delays
+
+**Problem:** Long delays between violation detection and email delivery.
+
+**Resolution:**
+1. **Check Email Queue Status:**
+   ```bash
+   # Monitor email sending performance
+   azd logs --service agent --tail 100 | grep -i "email\|notification"
+   ```
+
+2. **Optimize Email Batching:**
+   - Configure email batching for multiple violations
+   - Implement async email sending
+   - Add retry logic for failed sends
+
+3. **Scale Email Processing:**
+   ```bash
+   # Increase container resources if needed
+   az containerapp update \
+     --name ca-agent-xcpeyeriwqbc4 \
+     --resource-group rg-azdteamsmod2 \
+     --cpu 0.5 \
+     --memory 1.0Gi
+   ```
+
 ## Email Notification Issues
 
 ### Communication Services Authentication Failed

@@ -175,15 +175,119 @@ After collecting all the required values, update your deployment:
 - Enable multi-factor authentication for administrators
 - Regular access reviews for app owners
 
-### 3. Configure Email Notifications
+### 3. Configure Azure Communication Services for Email Notifications
 
-Set up Azure Communication Services for email alerts:
+**📋 Complete Setup Guide:** See [Email Setup Guide](docs/EMAIL_SETUP.md) for detailed instructions.
 
-**Email Configuration:**
-- Verify sender domain in Azure Communication Services
-- Configure recipient email addresses for alerts
-- Set up email templates for different violation types
-- Test email delivery functionality
+**Quick Overview:** Configure Azure Communication Services for email alerts and notifications:
+
+#### 3.1 Create Azure Communication Services Resources
+
+The infrastructure deployment automatically creates ACS resources, but you need to configure domains:
+
+1. **Verify ACS Resources Created:**
+   ```bash
+   # Check if ACS resources were created by deployment
+   az resource list --resource-group rg-azdteamsmod2 --resource-type Microsoft.Communication/CommunicationServices
+   az resource list --resource-group rg-azdteamsmod2 --resource-type Microsoft.Communication/EmailServices
+   ```
+
+2. **Configure Email Domain:**
+   - **Option A (Quick Start):** Use Azure-managed domain for testing
+   - **Option B (Production):** Configure your custom domain with DNS verification
+
+#### 3.2 Azure-Managed Domain Setup (Recommended for Testing)
+
+1. **Access Azure Portal:**
+   - Navigate to Azure Communication Services → Email Communication Services
+   - Select your email service resource
+
+2. **Add Azure Subdomain:**
+   - Click "Provision domains" → "Add domain" → "Azure subdomain"
+   - Azure creates: `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx.azurecomm.net`
+   - Domain is pre-verified and ready to use immediately
+
+3. **Link Domain to ACS:**
+   ```bash
+   # Get your email service name
+   az communication email list --resource-group rg-azdteamsmod2
+   
+   # Link the Azure-managed domain
+   az communication email domain link \
+     --email-service-name "ecs-xcpeyeriwqbc4" \
+     --domain-name "your-azure-domain.azurecomm.net" \
+     --resource-group rg-azdteamsmod2
+   ```
+
+#### 3.3 Custom Domain Setup (Production)
+
+1. **Add Custom Domain:**
+   - In Email Communication Services, click "Add domain" → "Custom domain"
+   - Enter your domain (e.g., `yourcompany.com`)
+
+2. **Configure DNS Records:**
+   - Add required TXT record for domain verification
+   - Add CNAME records for email authentication (SPF, DKIM)
+   - Wait for verification (15 minutes to 48 hours)
+
+3. **Link Custom Domain:**
+   ```bash
+   az communication email domain link \
+     --email-service-name "ecs-xcpeyeriwqbc4" \
+     --domain-name "yourcompany.com" \
+     --resource-group rg-azdteamsmod2
+   ```
+
+#### 3.4 Configure Email Settings
+
+1. **Get Connection String:**
+   ```bash
+   # Get ACS connection string
+   az communication list-key \
+     --name "acs-xcpeyeriwqbc4" \
+     --resource-group rg-azdteamsmod2 \
+     --query "primaryConnectionString" -o tsv
+   ```
+
+2. **Update Environment Variables:**
+   ```bash
+   # Set email configuration
+   azd env set EMAIL_CONNECTION_STRING "endpoint=https://acs-xcpeyeriwqbc4.communication.azure.com/;accesskey=YOUR_ACCESS_KEY"
+   azd env set EMAIL_SENDER "noreply@your-domain.azurecomm.net"
+   azd env set NOTIFICATION_EMAIL "admin@yourcompany.com"
+   
+   # Redeploy to apply changes
+   azd up
+   ```
+
+#### 3.5 Test Email Functionality
+
+1. **Test Through UI Dashboard:**
+   - Access the UI dashboard
+   - Navigate to "Email Configuration" section
+   - Click "Send Test Email"
+   - Verify email delivery to configured recipients
+
+2. **Test via Azure Portal:**
+   - Go to Communication Services → Email Communication Services
+   - Use "Send test email" feature
+   - Verify email templates and delivery
+
+#### 3.6 Configure Email Templates
+
+Customize email notifications for different violation types:
+
+**Template Types:**
+- **Hate Speech Detection**: High-priority immediate alerts
+- **Harassment/Bullying**: Medium-priority with context
+- **PII Detection**: Privacy-focused notifications
+- **Policy Violations**: General content policy alerts
+
+**Email Recipients:**
+- IT administrators
+- HR representatives
+- Team moderators
+- Compliance officers
 
 ### 4. Monitor and Tune
 
@@ -367,6 +471,185 @@ python scripts/test_email.py
 # Verify Teams connectivity  
 python scripts/test_teams_connection.py
 ```
+
+## Post-Deployment Verification
+
+### 5. Complete System Verification
+
+After completing the Teams and email configuration, verify the entire system is working:
+
+#### 5.1 Infrastructure Health Check
+
+```bash
+# Check all Azure resources status
+az resource list --resource-group rg-azdteamsmod2 --query "[].{name:name, type:type, location:location, provisioningState:properties.provisioningState}" --output table
+
+# Verify container apps are running
+az containerapp list --resource-group rg-azdteamsmod2 --query "[].{name:name, status:properties.provisioningState, replicas:properties.runningState}" --output table
+
+# Check managed identity assignments
+az role assignment list --assignee $(az identity show --name "id-xcpeyeriwqbc4" --resource-group rg-azdteamsmod2 --query principalId -o tsv) --output table
+```
+
+#### 5.2 Application Configuration Verification
+
+```bash
+# Check environment variables are set correctly
+azd env list
+
+# Verify agent startup and configuration loading
+azd logs --service agent --tail 100 | grep -i "Starting Teams moderation\|Connected to Azure\|Monitoring configured channels"
+
+# Check UI accessibility
+curl -I $(azd show --query services.ui.uri -o tsv)
+```
+
+#### 5.3 Teams Integration Testing
+
+1. **Test Teams Connection:**
+   ```bash
+   # Monitor logs for Teams API calls
+   azd logs --service agent --follow &
+   
+   # Post a test message in monitored channel
+   # Watch logs for message processing
+   ```
+
+2. **Verify Channel Detection:**
+   - Access UI dashboard → Teams Configuration
+   - Verify correct team and channels are detected
+   - Check monitoring status is "Active"
+
+#### 5.4 Email Notification Testing
+
+1. **Test Email Delivery:**
+   - Navigate to UI dashboard → Email Test
+   - Send test email and verify delivery
+   - Check email formatting and content
+
+2. **End-to-End Test:**
+   - Post a message with policy-violating content in monitored channel
+   - Verify message is detected and processed
+   - Confirm email notification is sent
+   - Check appropriate action was taken (flag/delete based on configuration)
+
+### 6. Ongoing Operations and Monitoring
+
+#### 6.1 Daily Monitoring Tasks
+
+**Health Check Commands:**
+```bash
+# Daily health check script
+#!/bin/bash
+echo "=== Daily Teams Moderation Health Check ==="
+echo "Date: $(date)"
+
+# Check container app status
+echo -e "\n1. Container App Status:"
+az containerapp show --name ca-agent-xcpeyeriwqbc4 --resource-group rg-azdteamsmod2 --query "properties.runningState" -o tsv
+
+# Check recent log errors
+echo -e "\n2. Recent Errors (last 1 hour):"
+azd logs --service agent --tail 500 | grep -i "error\|exception\|failed" | tail -10
+
+# Check message processing volume
+echo -e "\n3. Message Processing (last hour):"
+azd logs --service agent --tail 1000 | grep "Processed message" | tail -5
+
+# Check email delivery status
+echo -e "\n4. Email Notifications (last 24h):"
+azd logs --service agent --tail 2000 | grep "Notification sent" | tail -5
+```
+
+#### 6.2 Weekly Maintenance Tasks
+
+1. **Review Detection Accuracy:**
+   - Access UI dashboard → Analytics
+   - Review false positive/negative rates
+   - Adjust policy sensitivity if needed
+
+2. **User Access Review:**
+   - Review Teams channel membership changes
+   - Update monitoring channel list if needed
+   - Verify notification recipient list is current
+
+3. **Performance Review:**
+   ```bash
+   # Check container resource usage
+   az monitor metrics list \
+     --resource "/subscriptions/{subscription-id}/resourceGroups/rg-azdteamsmod2/providers/Microsoft.App/containerApps/ca-agent-xcpeyeriwqbc4" \
+     --metric "CpuPercentage,MemoryPercentage" \
+     --start-time $(date -u -d '7 days ago' +%Y-%m-%dT%H:%M:%SZ) \
+     --end-time $(date -u +%Y-%m-%dT%H:%M:%SZ)
+   ```
+
+#### 6.3 Monthly Security Review
+
+1. **Credential Rotation:**
+   - Check Teams client secret expiration date
+   - Rotate secrets if approaching expiration (90 days before)
+   - Update ACS connection strings if needed
+
+2. **Access Review:**
+   - Review Entra ID app registration permissions
+   - Audit email notification recipients
+   - Check Azure resource access permissions
+
+3. **Compliance Check:**
+   - Review processed violations and actions taken
+   - Generate compliance reports from UI dashboard
+   - Document any policy adjustments made
+
+### 7. Scaling and Performance Optimization
+
+#### 7.1 Container Scaling Configuration
+
+```bash
+# Update container app scaling rules
+az containerapp update \
+  --name ca-agent-xcpeyeriwqbc4 \
+  --resource-group rg-azdteamsmod2 \
+  --min-replicas 1 \
+  --max-replicas 5 \
+  --scale-rule-name "cpu-scale" \
+  --scale-rule-type "cpu" \
+  --scale-rule-metadata "targetUtilization=70"
+
+# Add memory-based scaling
+az containerapp update \
+  --name ca-agent-xcpeyeriwqbc4 \
+  --resource-group rg-azdteamsmod2 \
+  --scale-rule-name "memory-scale" \
+  --scale-rule-type "memory" \
+  --scale-rule-metadata "targetUtilization=80"
+```
+
+#### 7.2 Performance Monitoring
+
+1. **Set Up Application Insights Alerts:**
+   ```bash
+   # Alert for high error rate
+   az monitor metrics alert create \
+     --name "TeamsModeration-ErrorRate" \
+     --resource-group rg-azdteamsmod2 \
+     --scopes "/subscriptions/{subscription-id}/resourceGroups/rg-azdteamsmod2/providers/microsoft.insights/components/appi-xcpeyeriwqbc4" \
+     --condition "avg exceptions/count > 5" \
+     --description "High error rate in Teams moderation agent"
+   
+   # Alert for response time
+   az monitor metrics alert create \
+     --name "TeamsModeration-ResponseTime" \
+     --resource-group rg-azdteamsmod2 \
+     --scopes "/subscriptions/{subscription-id}/resourceGroups/rg-azdteamsmod2/providers/microsoft.insights/components/appi-xcpeyeriwqbc4" \
+     --condition "avg requests/duration > 5000" \
+     --description "High response time in Teams moderation system"
+   ```
+
+2. **Performance Tuning Guidelines:**
+   - **Message Processing**: Adjust polling interval based on team activity
+   - **AI Model Calls**: Optimize batch processing for better throughput  
+   - **Email Delivery**: Implement batching for high-volume notifications
+   - **Resource Allocation**: Monitor and adjust CPU/memory based on usage patterns
 
 ### Performance Tuning
 
