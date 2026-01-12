@@ -11,7 +11,7 @@ Uses REST API approach to avoid msgraph-sdk Windows long path issues.
 """
 
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import requests
@@ -59,7 +59,7 @@ class TeamsClient:
         """Get or refresh access token."""
         # Check if token is still valid
         if self._access_token and self._token_expiry:
-            if datetime.utcnow() < self._token_expiry:
+            if datetime.now(timezone.utc) < self._token_expiry:
                 return self._access_token
 
         # Acquire new token
@@ -69,7 +69,7 @@ class TeamsClient:
         if "access_token" in result:
             self._access_token = result["access_token"]
             # Set expiry to 55 minutes (tokens are valid for 60 minutes)
-            self._token_expiry = datetime.utcnow() + timedelta(minutes=55)
+            self._token_expiry = datetime.now(timezone.utc) + timedelta(minutes=55)
             return self._access_token
         else:
             raise Exception(f"Failed to acquire token: {result.get('error_description')}")
@@ -224,7 +224,65 @@ class TeamsClient:
             print(f"Error deleting message {message_id}: {e}")
             return False
 
+    async def get_message(self, team_id: str, channel_id: str, message_id: str) -> dict[str, Any] | None:
+        """
+        Get a specific message by ID.
 
+        Args:
+            team_id: Team ID
+            channel_id: Channel ID containing the message
+            message_id: Message ID to fetch
+
+        Returns:
+            Message information or None if not found
+        """
+        try:
+            url = f"{self.graph_url}/teams/{team_id}/channels/{channel_id}/messages/{message_id}"
+            response = requests.get(url, headers=self._get_headers())
+            response.raise_for_status()
+
+            msg = response.json()
+
+            # Parse message timestamp
+            created_at_str = msg.get("createdDateTime")
+            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00")) if created_at_str else None
+
+            # Extract user information
+            from_info = msg.get("from", {})
+            user_info = from_info.get("user", {}) if from_info else {}
+
+            # Extract body content
+            body = msg.get("body", {})
+            content = body.get("content", "")
+            content_type = body.get("contentType", "text")
+
+            # Extract attachments
+            attachments_data = msg.get("attachments", [])
+            attachments = [
+                {
+                    "id": att.get("id"),
+                    "name": att.get("name"),
+                    "content_type": att.get("contentType"),
+                }
+                for att in attachments_data
+            ]
+
+            return {
+                "id": msg.get("id"),
+                "content": content,
+                "content_type": content_type,
+                "created_at": created_at,
+                "user_id": user_info.get("id"),
+                "user_display_name": user_info.get("displayName"),
+                "user_email": user_info.get("userPrincipalName"),
+                "attachments": attachments,
+                "importance": msg.get("importance"),
+                "channel_id": channel_id,
+            }
+
+        except Exception as e:
+            print(f"Error fetching message {message_id}: {e}")
+            return None
 
     async def monitor_channels(
         self,
@@ -247,7 +305,7 @@ class TeamsClient:
         print(f"Monitoring {len(channel_map)} channels: {', '.join(channel_map.keys())}")
 
         # Track last check time for each channel
-        last_check = {ch_id: datetime.utcnow() - timedelta(minutes=5) for ch_id in [ch["id"] for ch in channels]}
+        last_check = {ch_id: datetime.now(timezone.utc) - timedelta(minutes=5) for ch_id in [ch["id"] for ch in channels]}
 
         while True:
             try:
@@ -271,7 +329,7 @@ class TeamsClient:
 
                     # Update last check time
                     if messages:
-                        last_check[channel_id] = datetime.utcnow()
+                        last_check[channel_id] = datetime.now(timezone.utc)
 
                 # Wait before next poll
                 await asyncio.sleep(polling_interval)

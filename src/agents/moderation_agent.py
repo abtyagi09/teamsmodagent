@@ -13,12 +13,11 @@ This agent analyzes text content for policy violations including:
 import os
 from typing import Any
 
-from agent_framework import ChatAgent, ChatMessage, Role
-from agent_framework_azure_ai import AzureAIAgentClient
+from openai import AsyncAzureOpenAI
 from azure.ai.contentsafety import ContentSafetyClient
 from azure.ai.contentsafety.models import AnalyzeTextOptions, TextCategory
 from azure.core.credentials import AzureKeyCredential
-from azure.identity import DefaultAzureCredential
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 
 
 class ModerationAgent:
@@ -57,18 +56,34 @@ class ModerationAgent:
             endpoint=content_safety_endpoint, credential=credential
         )
 
-        # Initialize the AI agent for contextual analysis
-        self.agent_client = AzureAIAgentClient(
-            project_endpoint=foundry_endpoint,
-            model_deployment_name=model_deployment,
-            async_credential=DefaultAzureCredential(),
-            agent_name="ModerationAgent",
+        # Initialize Azure OpenAI client for contextual analysis
+        # Use DefaultAzureCredential which works with managed identity automatically
+        azure_credential = DefaultAzureCredential()
+        token_provider = get_bearer_token_provider(azure_credential, "https://cognitiveservices.azure.com/.default")
+        
+        # Use the foundry endpoint directly as the Azure OpenAI endpoint
+        self.openai_client = AsyncAzureOpenAI(
+            azure_ad_token_provider=token_provider,
+            api_version="2024-10-21",
+            azure_endpoint=foundry_endpoint
         )
+        
+        self.model_deployment = model_deployment
+        self.system_instructions = self._build_instructions()
 
-        self.chat_agent = ChatAgent(
-            chat_client=self.agent_client,
-            instructions=self._build_instructions(),
-        )
+    def refresh_policies(self, policies: dict[str, Any]) -> None:
+        """
+        Refresh moderation policies without recreating the agent.
+        
+        Args:
+            policies: Updated moderation policies configuration
+        """
+        self.policies = policies
+        # Rebuild instructions with new policies
+        new_instructions = self._build_instructions()
+        # Update the chat agent's instructions
+        self.chat_agent.instructions = new_instructions
+        print(f"✅ Moderation policies refreshed")
 
     def _build_instructions(self) -> str:
         """Build agent instructions based on configured policies."""
@@ -133,6 +148,7 @@ while minimizing false positives that could frustrate legitimate communication.
             Dictionary with category scores and detected issues
         """
         try:
+            print(f"🔍 Analyzing content with Content Safety: '{text[:100]}{'...' if len(text) > 100 else ''}'")
             request = AnalyzeTextOptions(text=text)
             response = self.content_safety_client.analyze_text(request)
 
@@ -144,12 +160,24 @@ while minimizing false positives that could frustrate legitimate communication.
                 "violence": response.categories_analysis[3].severity if len(response.categories_analysis) > 3 else 0,
             }
 
+            # More sensitive detection thresholds (severity 1+ for hate, 2+ for others)
+            hate_flagged = results["hate"] >= 1  # Lower threshold for harassment/bullying
+            other_flagged = any(results[cat] >= 2 for cat in ["self_harm", "sexual", "violence"])
+            flagged = hate_flagged or other_flagged
+
+            print(f"📊 Content Safety results: {results}, flagged: {flagged}")
+
             return {
                 "service": "azure_content_safety",
                 "categories": results,
-                "flagged": any(score >= 2 for score in results.values()),  # Severity 2+ is concerning
+                "flagged": flagged,
+                "details": {
+                    "hate_flagged": hate_flagged,
+                    "other_flagged": other_flagged
+                }
             }
         except Exception as e:
+            print(f"❌ Content Safety error: {e}")
             return {
                 "service": "azure_content_safety",
                 "error": str(e),
@@ -188,13 +216,21 @@ Message: "{text}"
 
 Provide your analysis in JSON format."""
 
-            messages = [ChatMessage(role=Role.USER, text=user_message)]
-            response = await self.chat_agent.run(messages)
+            # Use OpenAI Chat Completions API
+            response = await self.openai_client.chat.completions.create(
+                model=self.model_deployment,
+                messages=[
+                    {"role": "system", "content": self.system_instructions},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.1,
+                max_tokens=1000
+            )
 
             # Parse agent response (assuming JSON format)
             import json
 
-            agent_text = response.text
+            agent_text = response.choices[0].message.content
             # Extract JSON from response (may be wrapped in markdown)
             if "```json" in agent_text:
                 agent_text = agent_text.split("```json")[1].split("```")[0]

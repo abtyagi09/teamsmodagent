@@ -1,0 +1,17 @@
+{
+  "resourcesResourceGroups": "rg-",
+  "containerRegistryRegistries": "cr",
+  "appManagedEnvironments": "cae-",
+  "appContainerApps": "ca-",
+  "operationalInsightsWorkspaces": "log-",
+  "insightsComponents": "appi-",
+  "appConfigurationConfigurationStores": "appconfig-",
+  "storageStorageAccounts": "st",
+  "keyVaultVaults": "kv-",
+  "machineLearningServicesWorkspaces": "mlw-",
+  "cognitiveServicesAccounts": "ai-",
+  "serviceBusNamespaces": "sb-",
+  "communicationServices": "acs-",
+  "communicationServicesEmailServices": "email-",
+  "managedIdentityUserAssignedIdentities": "id-"
+}

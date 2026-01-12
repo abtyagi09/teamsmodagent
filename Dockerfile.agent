@@ -14,6 +14,7 @@ COPY requirements.txt .
 
 # Install Python dependencies
 RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir agent-framework-azure-ai --pre
 
 # Copy application code
 COPY . .
@@ -21,5 +22,8 @@ COPY . .
 # Set environment variables
 ENV PYTHONUNBUFFERED=1
 
-# Run monitoring agent
-CMD ["python", "start_monitoring.py"]
+# Add health check endpoint
+EXPOSE 8080
+
+# Run monitoring agent with full functionality
+CMD ["python", "-m", "src.main"]

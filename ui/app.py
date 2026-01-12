@@ -15,7 +15,7 @@ import streamlit as st
 # Add parent directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from src.utils.config_loader import get_settings, load_json_config
+from src.utils.config_loader import get_settings, load_json_config, save_json_config
 
 
 # Page configuration
@@ -92,9 +92,7 @@ def load_channels_config():
 
 def save_channels_config(config):
     """Save channels configuration."""
-    config_path = get_project_root() / "config" / "channels.json"
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+    save_json_config("channels.json", config)
 
 
 def load_policies_config():
@@ -172,9 +170,7 @@ def load_policies_config():
 
 def save_policies_config(config):
     """Save policies configuration."""
-    config_path = get_project_root() / "config" / "policies.json"
-    with open(config_path, "w") as f:
-        json.dump(config, f, indent=2)
+    save_json_config("policies.json", config)
 
 
 def verify_teams_connection():
@@ -265,6 +261,7 @@ def show_channel_settings():
                 config["monitored_channels"] = monitored
                 save_channels_config(config)
                 st.success(f"Added '{new_monitored}' to monitored channels!")
+                st.info("ℹ️ Restart the agent container for changes to take effect")
                 st.rerun()
             elif new_monitored in monitored:
                 st.warning("Channel already in list!")
@@ -343,6 +340,7 @@ def show_channel_settings():
         }
         save_channels_config(config)
         st.success("✅ Monitoring settings saved!")
+        st.info("ℹ️ Note: Restart the agent container for changes to take effect")
 
     # Preview configuration
     st.markdown("---")

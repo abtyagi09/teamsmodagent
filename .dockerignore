@@ -1,0 +1,49 @@
+# Virtual environments
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Git
+.git/
+.gitignore
+
+# Azure
+.azure/
+azd-ai-agents-*.log
+
+# Logs
+logs/
+*.log
+
+# Documentation
+*.md
+docs/
+
+# Test files
+tests/
+test_*.py
+
+# Example files
+*.example.*
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Deployment files
+deployment/
+
+# Node modules if any
+node_modules/
+
+# Large files
+*.tar
+*.zip
+*.gz

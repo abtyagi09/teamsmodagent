@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "contentSafetyKey": {
+      "value": "${CONTENT_SAFETY_KEY}"
+    },
+    "teamsClientSecret": {
+      "value": "${TEAMS_CLIENT_SECRET}"
+    },
+    "contentSafetyEndpoint": {
+      "value": "${CONTENT_SAFETY_ENDPOINT}"
+    },
+    "teamsTenantId": {
+      "value": "${TEAMS_TENANT_ID}"
+    },
+    "teamsClientId": {
+      "value": "${TEAMS_CLIENT_ID}"
+    },
+    "teamsTeamId": {
+      "value": "${TEAMS_TEAM_ID}"
+    },
+    "emailSender": {
+      "value": "${EMAIL_SENDER}"
+    },
+    "emailConnectionString": {
+      "value": "${EMAIL_CONNECTION_STRING}"
+    },
+    "notificationEmail": {
+      "value": "${NOTIFICATION_EMAIL}"
+    },
+    "foundryProjectEndpoint": {
+      "value": "${FOUNDRY_PROJECT_ENDPOINT}"
+    },
+    "foundryModelDeployment": {
+      "value": "${FOUNDRY_MODEL_DEPLOYMENT}"
+    }
+  }
+}

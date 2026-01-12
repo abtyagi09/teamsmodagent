@@ -36,6 +36,12 @@ async def main():
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Override log level from config",
     )
+    parser.add_argument(
+        "--config-refresh-interval",
+        type=int,
+        default=300,
+        help="Seconds between configuration refreshes from App Configuration (default: 300)",
+    )
 
     args = parser.parse_args()
 
@@ -71,7 +77,6 @@ async def main():
             foundry_endpoint=settings.foundry_project_endpoint,
             model_deployment=settings.foundry_model_deployment,
             notification_email=settings.notification_email,
-            notification_webhook=settings.notification_webhook,
             email_connection_string=settings.email_connection_string,
             email_sender=settings.email_sender,
         )
@@ -91,6 +96,7 @@ async def main():
             notification_agent=notification_agent,
             teams_client=teams_client,
             dry_run=args.dry_run or settings.moderation_mode == "monitor",
+            config_refresh_interval=args.config_refresh_interval,
         )
 
         # Determine which channels to monitor
@@ -105,7 +111,7 @@ async def main():
         logger.info("Starting channel monitoring")
         await workflow.start_monitoring(
             monitored_channels=monitored_channels,
-            polling_interval=settings.polling_interval,
+            polling_interval=60,  # Poll every 60 seconds
         )
 
     except KeyboardInterrupt:

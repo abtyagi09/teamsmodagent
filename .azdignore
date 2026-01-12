@@ -1,0 +1,47 @@
+# Git and version control
+.git/
+.gitignore
+.github/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+ENV/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+logs/
+*.log
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+tests/
+
+# Documentation (excluded from deployment)
+docs/
+*.md
+!README.md
+
+# Old deployment scripts
+deployment/
+
+# Local environment files
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db

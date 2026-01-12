@@ -5,6 +5,8 @@ Coordinates the moderation agent, notification agent, and Teams operations
 using Microsoft Agent Framework.
 """
 
+import asyncio
+import re
 from datetime import datetime
 from typing import Any
 
@@ -14,6 +16,7 @@ from typing_extensions import Never
 from ..agents.moderation_agent import ModerationAgent
 from ..agents.notification_agent import NotificationAgent
 from ..integrations.teams_client import TeamsClient
+from ..utils.config_loader import load_json_config
 
 
 class MessageProcessingContext:
@@ -80,9 +83,12 @@ class ModerationExecutor(Executor):
             ctx: Workflow context
         """
         message = processing_ctx.message
-        content = message.get("content", "")
+        raw_content = message.get("content", "")
+        
+        # Strip HTML tags from Teams message content
+        content = self._strip_html_tags(raw_content)
 
-        print(f"🔍 Analyzing content: '{content[:50]}{'...' if len(content) > 50 else ''}'")
+        print(f"🔍 Analyzing content: '{content[:100]}{'...' if len(content) > 100 else ''}'")
 
         # Prepare context for moderation agent
         moderation_context = {
@@ -102,6 +108,27 @@ class ModerationExecutor(Executor):
 
         # Forward to decision executor
         await ctx.send_message(processing_ctx)
+
+    def _strip_html_tags(self, html_content: str) -> str:
+        """
+        Remove HTML tags and extract plain text for content analysis.
+        
+        Args:
+            html_content: HTML formatted content from Teams
+            
+        Returns:
+            Plain text content without HTML tags
+        """
+        if not html_content:
+            return ""
+            
+        # Remove HTML tags using regex
+        clean_text = re.sub(r'<[^>]+>', '', html_content)
+        
+        # Clean up extra whitespace
+        clean_text = re.sub(r'\s+', ' ', clean_text).strip()
+        
+        return clean_text
 
 
 class DecisionExecutor(Executor):
@@ -229,6 +256,7 @@ class ModerationWorkflow:
         notification_agent: NotificationAgent,
         teams_client: TeamsClient,
         dry_run: bool = False,
+        config_refresh_interval: int = 300,  # Refresh config every 5 minutes
     ):
         """
         Initialize the workflow.
@@ -238,11 +266,15 @@ class ModerationWorkflow:
             notification_agent: Notification agent
             teams_client: Teams API client
             dry_run: If True, don't actually delete messages
+            config_refresh_interval: Seconds between configuration refreshes (default: 300)
         """
         self.moderation_agent = moderation_agent
         self.notification_agent = notification_agent
         self.teams_client = teams_client
         self.dry_run = dry_run
+        self.config_refresh_interval = config_refresh_interval
+        self._last_config_refresh = datetime.utcnow()
+        self._monitored_channels = []
 
         # Build the workflow
         self.workflow = self._build_workflow()
@@ -270,6 +302,33 @@ class ModerationWorkflow:
         )
 
         return workflow
+
+    async def _refresh_configuration(self) -> None:
+        """
+        Refresh configuration from Azure App Configuration.
+        Reloads policies and monitored channels without restarting the agent.
+        """
+        try:
+            print("🔄 Refreshing configuration from App Configuration...")
+            
+            # Load fresh configuration (no cache)
+            policies_config = load_json_config("policies.json", use_cache=False)
+            channels_config = load_json_config("channels.json", use_cache=False)
+            
+            # Update moderation agent policies
+            self.moderation_agent.refresh_policies(policies_config)
+            
+            # Update monitored channels
+            new_channels = channels_config.get("monitored_channels", [])
+            if new_channels != self._monitored_channels:
+                print(f"📺 Updated monitored channels: {', '.join(new_channels)}")
+                self._monitored_channels = new_channels
+            
+            self._last_config_refresh = datetime.utcnow()
+            print("✅ Configuration refresh complete")
+            
+        except Exception as e:
+            print(f"⚠️  Failed to refresh configuration: {e}")
 
     async def process_message(self, message: dict[str, Any]) -> MessageProcessingContext:
         """
@@ -302,15 +361,23 @@ class ModerationWorkflow:
             monitored_channels: List of channel names to monitor
             polling_interval: Seconds between polls
         """
+        self._monitored_channels = monitored_channels
+        
         print(f"🚀 Starting Teams moderation workflow")
         print(f"📺 Monitoring channels: {', '.join(monitored_channels)}")
         print(f"🔄 Polling interval: {polling_interval} seconds")
+        print(f"🔄 Configuration refresh interval: {self.config_refresh_interval} seconds")
         if self.dry_run:
             print(f"🧪 DRY RUN MODE - No messages will be deleted")
 
         async def message_callback(message: dict[str, Any]):
             """Callback for processing each new message."""
             try:
+                # Check if we need to refresh configuration
+                elapsed = (datetime.utcnow() - self._last_config_refresh).total_seconds()
+                if elapsed >= self.config_refresh_interval:
+                    await self._refresh_configuration()
+                
                 result = await self.process_message(message)
                 print(f"✅ Processed message {message.get('id')} - Action: {result.action_taken}")
             except Exception as e:
@@ -318,7 +385,7 @@ class ModerationWorkflow:
 
         # Start monitoring
         await self.teams_client.monitor_channels(
-            monitored_channels=monitored_channels,
+            monitored_channels=self._monitored_channels,
             callback=message_callback,
             polling_interval=polling_interval,
         )

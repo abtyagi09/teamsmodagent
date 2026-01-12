@@ -125,7 +125,7 @@ async def verify_azure_foundry():
             client = AzureAIAgentClient(
                 project_endpoint=settings.foundry_project_endpoint,
                 model_deployment_name=settings.foundry_model_deployment,
-                async_credential=credential,
+                credential=credential,
                 agent_name="TestAgent",
             )
             print_check("Microsoft Foundry client initialized", True)

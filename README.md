@@ -1,177 +1,146 @@
-# AI-Driven Microsoft Teams Moderation System
+# Teams Channel Moderation - Multi-Agent Custom Automation Engine
 
-An intelligent, multi-agent moderation system for Microsoft Teams built entirely with Azure AI Foundry (formerly Azure AI Foundry). This solution automatically detects, notifies, and removes policy-violating content from Teams channels at scale.
+AI-powered content moderation system for Microsoft Teams using Azure AI Foundry, Content Safety, and multi-agent orchestration following the [Multi-Agent Custom Automation Engine Solution Accelerator](https://github.com/microsoft/Multi-Agent-Custom-Automation-Engine-Solution-Accelerator) patterns.
 
-## 🎯 Overview
+## Solution Overview
 
-**Business Challenge**: Russell Cellular's Teams rollout to frontline workforce created moderation challenges that HR cannot handle manually at scale.
+This solution provides intelligent, real-time content moderation for Microsoft Teams channels using a multi-agent architecture that combines Azure AI Content Safety with Microsoft Foundry agents for context-aware moderation decisions.
 
-**Solution**: Agentic AI system with specialized agents working together to:
-- **Moderation Agent**: Analyzes text and images for policy violations using Azure AI Content Safety
-- **Notification Agent**: Sends alerts to HR/admins when violations are detected
-- **Orchestrator**: Coordinates agents and manages Teams operations (monitoring, deletion)
+### Key Features
 
-## 🏗️ Architecture
+- **🔄 Real-time Monitoring**: Polls Teams channels every 60 seconds for new messages
+- **🤖 AI-Powered Detection**: Uses Azure AI Content Safety + Microsoft Foundry agents for intelligent moderation
+- **🏗️ Multi-Agent Architecture**: Orchestrates moderation, notification, and decision agents
+- **📧 Smart Notifications**: Sends alerts via Azure Communication Services
+- **⚙️ Flexible Policies**: Configurable rules for hate speech, harassment, profanity, PII detection
+- **📊 Web Dashboard**: Streamlit UI for configuration, monitoring, and analytics
+- **🔧 Easy Configuration**: Set up policies and channels through the web interface
+
+## Architecture
+
+The solution follows Microsoft's Multi-Agent Custom Automation Engine patterns:
 
 ```
-Microsoft Teams Channels
-        ↓
-   [Webhook/Graph API]
-        ↓
-    Orchestrator
-   /     |     \
-Moderation  Notification  Teams Actions
-  Agent       Agent      (Delete/Archive)
+┌─────────────────┐     ┌──────────────────┐     ┌─────────────────┐
+│ Microsoft Teams │────▶│  Moderation      │────▶│  Notification   │
+│   (Messages)    │     │  Agent           │     │  Agent          │
+└─────────────────┘     └──────────────────┘     └─────────────────┘
+                               │
+                               ▼
+                        ┌──────────────────┐
+                        │  Azure AI        │
+                        │  Content Safety  │
+                        │  + AI Foundry    │
+                        └──────────────────┘
 ```
 
-## ✨ Features
+## Quick Start
 
-- ✅ **Text Moderation**: Detects profanity, harassment, discrimination, PII leaks
-- 🖼️ **Image Recognition**: Analyzes images for inappropriate content (future roadmap)
-- 🔔 **Real-time Notifications**: Alerts HR when violations occur
-- 🗑️ **Automated Deletion**: Removes violating posts automatically
-- ⚙️ **Channel Selection**: Configure which channels to moderate
-- 📊 **Audit Trail**: Logs all moderation actions
-- 🔐 **Secure**: Uses Azure Managed Identity, no hardcoded credentials
+### Prerequisites
 
-## 🚀 Prerequisites
+- [Azure Developer CLI (azd) 1.18.0+](https://aka.ms/install-azd)
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for local development)
+- Azure subscription with appropriate permissions
+- Microsoft Teams team to monitor
+- **Microsoft Entra ID app registration** - See [Teams Entra ID Setup Guide](docs/TEAMS_ENTRA_SETUP.md)
 
-### Azure Resources Required
+### Deploy to Azure
 
-1. **Microsoft Foundry Project** (formerly Azure AI Foundry)
-   - Deploy a model (recommended: `gpt-4.1` or `gpt-4o`)
-   - Note your project endpoint and deployment name
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/Multi-Agent-Custom-Automation-Engine-Solution-Accelerator)
 
-2. **Azure AI Content Safety Service**
-   - For text and image moderation
-   - Note your endpoint and key
+1. **Clone and Initialize**
+   ```bash
+   git clone <your-repository-url>
+   cd teamschannelmod
+   ```
 
-3. **Microsoft Teams with Microsoft Entra ID App Registration**
-   - App permissions: `ChannelMessage.Read.All`, `ChannelMessage.Delete`
-   - Grant admin consent
+2. **Configure Teams Integration**
+   
+   **📋 Setup Guide:** Follow [Teams Entra ID Setup Guide](docs/TEAMS_ENTRA_SETUP.md) to:
+   - Create Entra ID app registration
+   - Configure Microsoft Graph permissions
+   - Generate client secrets
+   - Find Team and Channel IDs
+   
+   Then update your deployment:
+   ```bash
+   azd env set TEAMS_TENANT_ID "your-tenant-id"
+   azd env set TEAMS_CLIENT_ID "your-client-id"
+   azd env set TEAMS_CLIENT_SECRET "your-client-secret"
+   azd env set TEAMS_TEAM_ID "your-team-id"
+   ```
 
-4. **Azure Key Vault** (recommended for production)
-   - Store API keys and secrets
+3. **Deploy Infrastructure**
+   ```bash
+   azd up
+   ```
+   
+   This will:
+   - Create Azure Container Registry
+   - Build and push Docker images  
+   - Create Container Apps environment
+   - Deploy moderation agent and UI
+   - Configure managed identity and roles
 
-### Local Development Requirements
+4. **Configure Through UI**
+   
+   After deployment, access the UI dashboard at the URL provided by `azd up` and:
+   - Configure moderation policies
+   - Set up Teams channels to monitor
+   - Save configuration to Azure App Configuration
+   
+   ⚠️ **Important**: The agent requires configuration through the UI before it can function.
 
-- Python 3.11+
-- Azure CLI (`az login` configured)
-- Microsoft Teams admin access
+## Configuration
 
-## 📦 Installation
+All configuration is managed through the web dashboard:
 
-### 1. Clone and Setup
+### Moderation Policies
+- Hate speech detection thresholds
+- Harassment and bullying detection
+- Profanity filtering
+- Violence and self-harm detection
+- PII (Personal Identifiable Information) detection
+- Custom response actions (flag, delete, notify)
 
+### Teams Integration
+- Select channels to monitor
+- Exclude specific channels (e.g., private channels)
+- Configure monitoring intervals
+- Set notification preferences
+
+## Development
+
+### Local Development Setup
+
+Follow the [Local Development Setup Guide](docs/LocalDevelopmentSetup.md) for detailed instructions.
+
+Quick local setup:
 ```bash
-cd c:\agents\teamschannelmod
-python -m venv venv
-venv\Scripts\activate
+# Install dependencies
 pip install -r requirements.txt
+
+# Configure environment
+cp .env.example .env
+# Edit .env with your Azure resource details
+
+# Run locally
+python -m src.main
+streamlit run ui/app.py  # In separate terminal
 ```
 
-### 2. Configure Environment
-
-Copy `.env.example` to `.env` and fill in your values:
+### Testing
 
 ```bash
-# Microsoft Foundry (formerly Azure AI Foundry)
-FOUNDRY_PROJECT_ENDPOINT=https://<your-project>.api.azureml.ms
-FOUNDRY_MODEL_DEPLOYMENT=gpt-4o
-AZURE_SUBSCRIPTION_ID=<your-subscription-id>
-AZURE_RESOURCE_GROUP=<your-resource-group>
+# Run all tests
+python -m pytest tests/
 
-# Azure AI Content Safety
-CONTENT_SAFETY_ENDPOINT=https://<your-content-safety>.cognitiveservices.azure.com
-CONTENT_SAFETY_KEY=<your-key>
-
-# Microsoft Teams
-TEAMS_TENANT_ID=<your-tenant-id>
-TEAMS_CLIENT_ID=<your-app-client-id>
-TEAMS_CLIENT_SECRET=<your-client-secret>
-TEAMS_TEAM_ID=<team-id-to-monitor>
-
-# Notification Settings
-NOTIFICATION_EMAIL=hr@russellcellular.com
-NOTIFICATION_WEBHOOK=<optional-teams-webhook-for-alerts>
+# Test specific components
+python tests/test_moderation.py
+python tests/test_email.py
 ```
 
-### 3. Configure Moderated Channels
-
-**Option A: Use the Configuration UI (Recommended)**
-
-```powershell
-streamlit run ui/app.py
-```
-
-The web interface provides easy configuration for:
-- Monitored and excluded channels
-- Moderation policies and thresholds
-- Connection testing
-- System settings review
-
-See [UI Documentation](ui/README.md) for details.
-
-**Option B: Edit JSON Files Manually**
-
-Edit `config/channels.json` to specify which channels to monitor:
-
-```json
-{
-  "monitored_channels": [
-    "general",
-    "frontline-chat",
-    "operations"
-  ],
-  "excluded_channels": [
-    "hr-private",
-    "executives"
-  ]
-}
-```
-
-### 4. Configure Moderation Policies
-
-Edit `config/policies.json` to define your content policies:
-
-```json
-{
-  "text_policies": {
-    "hate_speech": {
-      "enabled": true,
-      "threshold": "medium",
-      "action": "delete"
-    },
-    "profanity": {
-      "enabled": true,
-      "threshold": "high",
-      "action": "flag"
-    }
-  }
-}
-```
-
-## 🎬 Usage
-
-### Run the Moderation System
-
-```bash
-python src/main.py
-```
-
-### Test Mode (Dry Run)
-
-```bash
-python src/main.py --dry-run
-```
-
-### Monitor Specific Channel
-
-```bash
-python src/main.py --channel "frontline-chat"
-```
-
-## 📁 Project Structure
+## Project Structure
 
 ```
 teamschannelmod/
@@ -183,70 +152,97 @@ teamschannelmod/
 │   │   └── workflow.py             # Multi-agent orchestration
 │   ├── integrations/
 │   │   ├── teams_client.py         # Microsoft Graph API
-│   │   └── content_safety.py       # Azure Content Safety
+│   │   └── service_bus_consumer.py # Azure Service Bus
 │   ├── utils/
 │   │   ├── logging_config.py
 │   │   └── config_loader.py
 │   └── main.py                     # Entry point
+├── ui/
+│   └── app.py                      # Streamlit dashboard
 ├── config/
 │   ├── channels.json               # Channel configuration
 │   └── policies.json               # Moderation policies
+├── infra/
+│   └── main.bicep                  # Azure infrastructure
+├── docs/
+│   ├── DeploymentGuide.md          # Detailed deployment instructions
+│   └── LocalDevelopmentSetup.md   # Local setup guide
 ├── tests/
-│   ├── test_moderation.py
-│   └── test_workflow.py
-├── .env.example
-├── .gitignore
-├── requirements.txt
+├── azure.yaml                      # Azure Developer CLI configuration
 └── README.md
 ```
 
-## 🔧 Deployment to Azure
+## Deployment Options
 
-### Option 1: Azure Container Apps
+### Azure Container Apps (Recommended)
+Uses `azd up` for fully automated deployment with:
+- Scalable container hosting
+- Managed identity integration
+- Built-in monitoring and logging
 
+### Manual Azure Deployment
+See [docs/DeploymentGuide.md](docs/DeploymentGuide.md) for step-by-step manual deployment instructions.
+
+## Monitoring & Troubleshooting
+
+### View Logs
 ```bash
-az containerapp create \
-  --name teams-moderator \
-  --resource-group <your-rg> \
-  --environment <your-env> \
-  --image <your-acr>.azurecr.io/teams-moderator:latest \
-  --managed-identity system
+# Agent logs
+azd logs --service agent --follow
+
+# UI logs
+azd logs --service ui --follow
 ```
 
-### Option 2: Azure Functions
+### Common Issues
 
-Deploy as a timer-triggered function to poll Teams channels periodically.
+**Agent not detecting violations:**
+1. Verify managed identity has "Cognitive Services User" role
+2. Check policies are configured in the UI
+3. Review agent logs for errors
 
-See [deployment/README.md](deployment/README.md) for detailed instructions.
+**Email notifications not working:**
+1. Verify Azure Communication Services configuration
+2. Check sender email domain is verified
+3. Review notification agent logs
 
-## 📊 Monitoring & Logging
+For detailed troubleshooting, see [docs/TroubleShootingSteps.md](docs/TroubleShootingSteps.md).
 
-- All moderation actions logged to `logs/moderation.log`
-- Azure Application Insights integration available
-- View metrics: violations detected, false positives, response times
+## Security
 
-## 🛡️ Security Best Practices
+This solution implements security best practices:
+- **Managed Identity**: No stored credentials
+- **Secure Configuration**: Settings stored in Azure App Configuration
+- **Role-Based Access**: Minimal required permissions
+- **Audit Logging**: All moderation actions logged
 
-1. **Use Managed Identity** in production (no keys in code)
-2. **Store secrets in Azure Key Vault**
-3. **Enable audit logging** for compliance
-4. **Review moderation decisions** weekly to tune policies
-5. **Implement role-based access** for admin functions
+## Documentation
 
-## 🤝 Contributing
+- [Deployment Guide](docs/DeploymentGuide.md) - Comprehensive deployment instructions
+- [Local Development Setup](docs/LocalDevelopmentSetup.md) - Development environment setup
+- [Configuration Guide](docs/CONFIGURATION_ARCHITECTURE.md) - Detailed configuration options
+- [Email Setup](docs/EMAIL_SETUP.md) - Email notification configuration
 
-This is a custom solution for Russell Cellular. For support, contact the IT team.
+## Contributing
 
-## 📄 License
+This project follows the Microsoft Multi-Agent Custom Automation Engine Solution Accelerator patterns. For contributions:
 
-Proprietary - Russell Cellular Internal Use Only
+1. Follow the existing code structure and patterns
+2. Add tests for new functionality
+3. Update documentation for new features
+4. Follow Azure development best practices
 
-## 🆘 Support
+## Related Resources
 
-For issues or questions:
-- Email: it-support@russellcellular.com
-- Teams: @IT-Support-Team
+- [Multi-Agent Custom Automation Engine Solution Accelerator](https://github.com/microsoft/Multi-Agent-Custom-Automation-Engine-Solution-Accelerator)
+- [Azure AI Foundry Documentation](https://learn.microsoft.com/en-us/azure/ai-foundry/)
+- [Azure Container Apps Documentation](https://learn.microsoft.com/en-us/azure/container-apps/)
+- [Microsoft Agent Framework](https://learn.microsoft.com/en-us/agent-framework/)
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ---
 
-**Built with Microsoft Agent Framework & Azure AI Foundry** 🚀
+Built with Microsoft Agent Framework & Azure AI Foundry 🚀

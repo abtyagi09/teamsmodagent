@@ -12,10 +12,9 @@ from datetime import datetime
 from typing import Any
 
 import aiohttp
-from agent_framework import ChatAgent, ChatMessage, Role
-from agent_framework_azure_ai import AzureAIAgentClient
-from azure.identity import DefaultAzureCredential
+from azure.identity import DefaultAzureCredential, get_bearer_token_provider
 from azure.communication.email import EmailClient
+from openai import AsyncAzureOpenAI
 
 
 class NotificationAgent:
@@ -28,7 +27,6 @@ class NotificationAgent:
         foundry_endpoint: str,
         model_deployment: str,
         notification_email: str | None = None,
-        notification_webhook: str | None = None,
         email_connection_string: str | None = None,
         email_sender: str | None = None,
     ):
@@ -39,12 +37,10 @@ class NotificationAgent:
             foundry_endpoint: Microsoft Foundry project endpoint
             model_deployment: Model deployment name
             notification_email: Email address for notifications
-            notification_webhook: Webhook URL for notifications
             email_connection_string: Azure Communication Services connection string
             email_sender: Sender email address (from ACS Email domain)
         """
         self.notification_email = notification_email
-        self.notification_webhook = notification_webhook
         self.email_connection_string = email_connection_string
         self.email_sender = email_sender or "DoNotReply@teams-moderation.com"
         
@@ -57,17 +53,18 @@ class NotificationAgent:
                 print(f"Warning: Failed to initialize email client: {e}")
 
         # Initialize AI agent for composing notifications
-        self.agent_client = AzureAIAgentClient(
-            project_endpoint=foundry_endpoint,
-            model_deployment_name=model_deployment,
-            async_credential=DefaultAzureCredential(),
-            agent_name="NotificationAgent",
+        azure_credential = DefaultAzureCredential()
+        token_provider = get_bearer_token_provider(azure_credential, "https://cognitiveservices.azure.com/.default")
+        
+        # Use the foundry endpoint directly as the Azure OpenAI endpoint
+        self.openai_client = AsyncAzureOpenAI(
+            azure_ad_token_provider=token_provider,
+            api_version="2024-10-21",
+            azure_endpoint=foundry_endpoint
         )
-
-        self.chat_agent = ChatAgent(
-            chat_client=self.agent_client,
-            instructions=self._build_instructions(),
-        )
+        
+        self.model_deployment = model_deployment
+        self.system_instructions = self._build_instructions()
 
     def _build_instructions(self) -> str:
         """Build agent instructions for composing notifications."""
@@ -120,12 +117,8 @@ Respond in JSON format:
         # Step 1: Use agent to compose the notification
         notification_content = await self._compose_notification(violation_details, message_content, context)
 
-        # Step 2: Send notifications through configured channels
+        # Step 2: Send email notification
         results = []
-
-        if self.notification_webhook:
-            webhook_result = await self._send_webhook_notification(notification_content, violation_details, context)
-            results.append(webhook_result)
 
         if self.notification_email:
             email_result = await self._send_email_notification(notification_content, violation_details, context)
@@ -184,11 +177,19 @@ Context:
 
 Compose a professional notification in JSON format."""
 
-            messages = [ChatMessage(role=Role.USER, text=user_message)]
-            response = await self.chat_agent.run(messages)
+            # Use OpenAI Chat Completions API
+            response = await self.openai_client.chat.completions.create(
+                model=self.model_deployment,
+                messages=[
+                    {"role": "system", "content": self.system_instructions},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.1,
+                max_tokens=1000
+            )
 
             # Parse agent response
-            agent_text = response.text
+            agent_text = response.choices[0].message.content
             if "```json" in agent_text:
                 agent_text = agent_text.split("```json")[1].split("```")[0]
             elif "```" in agent_text:
@@ -228,109 +229,6 @@ Compose a professional notification in JSON format."""
             return content[:100] + "... [truncated]"
 
         return content
-
-    async def _send_webhook_notification(
-        self,
-        notification_content: dict[str, Any],
-        violation_details: dict[str, Any],
-        context: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Send notification via webhook (Microsoft Teams or custom endpoint).
-
-        Args:
-            notification_content: Composed notification
-            violation_details: Violation details
-            context: Context information
-
-        Returns:
-            Status of webhook notification
-        """
-        try:
-            # Build adaptive card for Teams webhook
-            card = self._build_teams_card(notification_content, violation_details, context)
-
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    self.notification_webhook,
-                    json=card,
-                    headers={"Content-Type": "application/json"},
-                ) as response:
-                    success = response.status == 200
-
-                    return {
-                        "channel": "teams_webhook",
-                        "success": success,
-                        "status_code": response.status,
-                        "webhook_url": self.notification_webhook,
-                    }
-
-        except Exception as e:
-            return {
-                "channel": "teams_webhook",
-                "success": False,
-                "error": str(e),
-            }
-
-    def _build_teams_card(
-        self,
-        notification_content: dict[str, Any],
-        violation_details: dict[str, Any],
-        context: dict[str, Any],
-    ) -> dict[str, Any]:
-        """
-        Build Microsoft Teams Adaptive Card for notification.
-
-        Returns:
-            Adaptive Card JSON
-        """
-        urgency = notification_content.get("urgency", "medium")
-        urgency_color = {"high": "attention", "medium": "warning", "low": "good"}.get(urgency, "default")
-
-        urgency_emoji = {"high": "🔴", "medium": "🟡", "low": "🟢"}.get(urgency, "ℹ️")
-
-        return {
-            "type": "message",
-            "attachments": [
-                {
-                    "contentType": "application/vnd.microsoft.card.adaptive",
-                    "content": {
-                        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
-                        "type": "AdaptiveCard",
-                        "version": "1.4",
-                        "body": [
-                            {
-                                "type": "TextBlock",
-                                "text": f"{urgency_emoji} {notification_content.get('subject', 'Policy Violation Detected')}",
-                                "weight": "bolder",
-                                "size": "large",
-                                "wrap": True,
-                            },
-                            {
-                                "type": "FactSet",
-                                "facts": [
-                                    {"title": "Severity:", "value": urgency.upper()},
-                                    {
-                                        "title": "Violations:",
-                                        "value": ", ".join(violation_details.get("violations", [])),
-                                    },
-                                    {"title": "Author:", "value": context.get("author", "Unknown")},
-                                    {"title": "Channel:", "value": context.get("channel", "Unknown")},
-                                    {"title": "Action Taken:", "value": violation_details.get("action", "flagged")},
-                                ],
-                            },
-                            {
-                                "type": "TextBlock",
-                                "text": notification_content.get("body", ""),
-                                "wrap": True,
-                                "separator": True,
-                            },
-                        ],
-                        "msteams": {"width": "Full"},
-                    },
-                }
-            ],
-        }
 
     async def _send_email_notification(
         self,

@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: teams-moderation-agent
+metadata:
+  template: teams-moderation-agent@0.0.1-beta
+
+services:
+  agent:
+    project: .
+    language: python
+    host: containerapp
+    docker:
+      path: ./Dockerfile.agent
+      context: .
+    env:
+      FOUNDRY_PROJECT_ENDPOINT: ${FOUNDRY_PROJECT_ENDPOINT}
+      FOUNDRY_MODEL_DEPLOYMENT: ${FOUNDRY_MODEL_DEPLOYMENT}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID}
+      CONTENT_SAFETY_ENDPOINT: ${CONTENT_SAFETY_ENDPOINT}
+      CONTENT_SAFETY_KEY: ${CONTENT_SAFETY_KEY}
+      TEAMS_TENANT_ID: ${TEAMS_TENANT_ID}
+      TEAMS_CLIENT_ID: ${TEAMS_CLIENT_ID}
+      TEAMS_CLIENT_SECRET: ${TEAMS_CLIENT_SECRET}
+      TEAMS_TEAM_ID: ${TEAMS_TEAM_ID}
+      EMAIL_CONNECTION_STRING: ${EMAIL_CONNECTION_STRING}
+      EMAIL_SENDER: ${EMAIL_SENDER}
+      NOTIFICATION_EMAIL: ${NOTIFICATION_EMAIL}
+      LOG_LEVEL: INFO
+      MODERATION_MODE: monitor
+
+  ui:
+    project: .
+    language: python
+    host: containerapp
+    docker:
+      path: ./Dockerfile.ui
+      context: .
+    env:
+      APP_CONFIG_ENDPOINT: ${APP_CONFIG_ENDPOINT}
+      FOUNDRY_PROJECT_ENDPOINT: ${FOUNDRY_PROJECT_ENDPOINT}
+      FOUNDRY_MODEL_DEPLOYMENT: ${FOUNDRY_MODEL_DEPLOYMENT}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID}
+      CONTENT_SAFETY_ENDPOINT: ${CONTENT_SAFETY_ENDPOINT}
+      CONTENT_SAFETY_KEY: ${CONTENT_SAFETY_KEY}
+      TEAMS_TENANT_ID: ${TEAMS_TENANT_ID}
+      TEAMS_CLIENT_ID: ${TEAMS_CLIENT_ID}
+      TEAMS_CLIENT_SECRET: ${TEAMS_CLIENT_SECRET}
+      TEAMS_TEAM_ID: ${TEAMS_TEAM_ID}
+      EMAIL_CONNECTION_STRING: ${EMAIL_CONNECTION_STRING}
+      EMAIL_SENDER: ${EMAIL_SENDER}
+      NOTIFICATION_EMAIL: ${NOTIFICATION_EMAIL}
+      LOG_LEVEL: INFO
+      MODERATION_MODE: monitor
